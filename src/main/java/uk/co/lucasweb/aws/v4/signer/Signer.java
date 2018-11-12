@@ -60,7 +60,13 @@ public class Signer {
 
     public String getSignature() {
         String signature = buildSignature(awsCredentials.getSecretKey(), scope, getStringToSign());
-        return buildAuthHeader(awsCredentials.getAccessKey(), scope.get(), request.getHeaders().getNames(), signature);
+        return buildAuthHeader(getCredential(awsCredentials.getAccessKey(), scope.get()), request.getHeaders().getNames(), signature);
+    }
+
+    public Authorization getSignatureValues() {
+        String signature = buildSignature(awsCredentials.getSecretKey(), scope, getStringToSign());
+        String credential = getCredential(awsCredentials.getAccessKey(), scope.get());
+        return new Authorization(ALGORITHM, credential, date, request.getHeaders().getNames(), signature);
     }
 
     public static Builder builder() {
@@ -75,8 +81,12 @@ public class Signer {
         return ALGORITHM + "\n" + date + "\n" + credentialScope + "\n" + hashedCanonicalRequest;
     }
 
-    private static String buildAuthHeader(String accessKey, String credentialScope, String signedHeaders, String signature) {
-        return ALGORITHM + " " + "Credential=" + accessKey + "/" + credentialScope + ", " + "SignedHeaders=" + signedHeaders + ", " + "Signature=" + signature;
+    private static String buildAuthHeader(String credential, String signedHeaders, String signature) {
+        return ALGORITHM + " " + "Credential=" + credential + ", " + "SignedHeaders=" + signedHeaders + ", " + "Signature=" + signature;
+    }
+
+    private static String getCredential(String accessKey, String credentialScope) {
+        return accessKey + "/" + credentialScope;
     }
 
     private static byte[] hmacSha256(byte[] key, String value) {
