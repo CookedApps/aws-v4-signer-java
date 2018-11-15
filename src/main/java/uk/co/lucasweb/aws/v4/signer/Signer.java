@@ -36,6 +36,7 @@ public class Signer {
     private static final Charset UTF_8 = Throwables.returnableInstance(() -> Charset.forName("UTF-8"), SigningException::new);
     private static final String X_AMZ_DATE = "X-Amz-Date";
     private static final String HMAC_SHA256 = "HmacSHA256";
+    private static final String UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD";
 
     private final CanonicalRequest request;
     private final AwsCredentials awsCredentials;
@@ -150,6 +151,10 @@ public class Signer {
             CanonicalHeaders canonicalHeaders = getCanonicalHeaders();
             String date = canonicalHeaders.getFirstValue(X_AMZ_DATE)
                     .orElseThrow(() -> new SigningException("headers missing '" + X_AMZ_DATE + "' header"));
+            return build(request, service, canonicalHeaders, date, contentSha256);
+        }
+
+        private Signer build(HttpRequest request, String service, CanonicalHeaders canonicalHeaders, String date, String contentSha256) {
             String dateWithoutTimestamp = formatDateWithoutTimestamp(date);
             AwsCredentials awsCredentials = getAwsCredentials();
             CanonicalRequest canonicalRequest = new CanonicalRequest(service, request, canonicalHeaders, contentSha256);
@@ -159,6 +164,10 @@ public class Signer {
 
         public Signer buildS3(HttpRequest request, String contentSha256) {
             return build(request, S3, contentSha256);
+        }
+
+        public Signer buildS3PresignedUrl(HttpRequest request, String date) {
+            return build(request, S3, getCanonicalHeaders(), date, UNSIGNED_PAYLOAD);
         }
 
         public Signer buildGlacier(HttpRequest request, String contentSha256) {
