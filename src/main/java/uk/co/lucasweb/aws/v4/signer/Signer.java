@@ -56,12 +56,23 @@ public class Signer {
         return buildStringToSign(date, scope.get(), hashedCanonicalRequest);
     }
 
+    /**
+     * Returns the calculated signature represented as Authorization header value.<br>
+     * e.g. AWS4-HMAC-SHA256 Credential="AccessKey"/20130524/us-east-1/s3/aws4_request,
+     * SignedHeaders=host;range;x-amz-content-sha256;x-amz-date,Signature="Signature"
+     * @return signature
+     */
     public String getSignature() {
         String signature = buildSignature(awsCredentials.getSecretKey(), scope, getStringToSign());
         return buildAuthHeader(getCredential(awsCredentials.getAccessKey(), scope.get()), request.getHeaders().getNames(), signature);
     }
 
-    public Authorization getSignatureValues() {
+    /**
+     * Returns the calculated signature represented as {@link Authorization} object. In this way the
+     * calculated values can be retrieved individually.
+     * @return signature as {@link Authorization}
+     */
+    public Authorization getSignatureValuesSeparately() {
         String signature = buildSignature(awsCredentials.getSecretKey(), scope, getStringToSign());
         String credential = getCredential(awsCredentials.getAccessKey(), scope.get());
         return new Authorization(ALGORITHM, credential, date, request.getHeaders().getNames(), signature);
@@ -111,11 +122,13 @@ public class Signer {
     public static class Builder {
 
         private static final String DEFAULT_REGION = "us-east-1";
+        private static final int DEFAULT_EXPIRATION = 86400; // 24hrs
         private static final String S3 = "s3";
         private static final String GLACIER = "glacier";
 
         private AwsCredentials awsCredentials;
         private String region = DEFAULT_REGION;
+        private int expiresIn = DEFAULT_EXPIRATION;
         private List<Header> headersList = new ArrayList<>();
 
         public Builder awsCredentials(AwsCredentials awsCredentials) {
@@ -125,6 +138,17 @@ public class Signer {
 
         public Builder region(String region) {
             this.region = region;
+            return this;
+        }
+
+        /**
+         * Sets the expiration time of a pre-signed Url.
+         * If not set, the default value (86400 seconds) will be used.
+         * @param expiresInSeconds Expiration time in seconds.
+         * @return {@link Builder}
+         */
+        public Builder expires(int expiresInSeconds) {
+            this.expiresIn = expiresInSeconds;
             return this;
         }
 
@@ -143,6 +167,13 @@ public class Signer {
             return this;
         }
 
+        /**
+         * Builds a generic {@link Signer} for signing various kinds of requests.
+         * @param request The http request.
+         * @param service String representation of the service used. e.g. "s3"
+         * @param contentSha256 A Sha256 encoded hash of the payload.
+         * @return {@link Signer}
+         */
         public Signer build(HttpRequest request, String service, String contentSha256) {
             CanonicalHeaders canonicalHeaders = getCanonicalHeaders();
             String date = canonicalHeaders.getFirstValue(X_AMZ_DATE)
@@ -154,22 +185,44 @@ public class Signer {
             return new Signer(canonicalRequest, awsCredentials, date, scope);
         }
 
+        /**
+         * Builds a generic {@link Signer} for signing S3 requests.
+         * @param request The http request.
+         * @param contentSha256 A Sha256 encoded hash of the payload.
+         * @return {@link Signer}
+         */
         public Signer buildS3(HttpRequest request, String contentSha256) {
             return build(request, S3, contentSha256);
         }
 
-        public Signer buildS3PreSignedUrl(HttpRequest request, String date) {
+        /**
+         * Builds a {@link Signer} for signing a pre-signed Url. Note: The essential query parameters like
+         * X-Amz-Algorithm, X-Amz-Credential etc. should not be explicitly set in the Uri of the {@link HttpRequest},
+         * they are added automatically! A pre-signed request will use an unsigned payload as content hash.
+         * @param request The http request.
+         * @param xAmzDate Date represented as ISO8201 string.
+         * @return {@link Signer}
+         */
+        public Signer buildS3PreSignedUrl(HttpRequest request, String xAmzDate) {
             String service = S3;
-            String dateWithoutTimestamp = formatDateWithoutTimestamp(date);
-            AwsCredentials awsCredentials = getAwsCredentials();
+
+            String dateWithoutTimestamp = formatDateWithoutTimestamp(xAmzDate);
             CredentialScope scope = new CredentialScope(dateWithoutTimestamp, service, region);
+            AwsCredentials awsCredentials = getAwsCredentials();
+            String credential = getCredential(awsCredentials.getAccessKey(), scope.get());
 
             CanonicalRequest canonicalRequest = new CanonicalRequest(service, request, getCanonicalHeaders(), UNSIGNED_PAYLOAD);
-            canonicalRequest.addPreSignedUrlQueryParameters(ALGORITHM, getCredential(awsCredentials.getAccessKey(), scope.get()), date);
+            canonicalRequest.addQueryParametersForPreSignedUrl(ALGORITHM, credential, xAmzDate, expiresIn);
 
-            return new Signer(canonicalRequest, awsCredentials, date, scope);
+            return new Signer(canonicalRequest, awsCredentials, xAmzDate, scope);
         }
 
+        /**
+         * Builds a generic {@link Signer} for signing Glacier requests.
+         * @param request The http request.
+         * @param contentSha256 A Sha256 encoded hash of the payload.
+         * @return {@link Signer}
+         */
         public Signer buildGlacier(HttpRequest request, String contentSha256) {
             return build(request, GLACIER, contentSha256);
         }

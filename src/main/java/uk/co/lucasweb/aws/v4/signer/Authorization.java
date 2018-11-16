@@ -1,6 +1,7 @@
 package uk.co.lucasweb.aws.v4.signer;
 
 /**
+ * An authorization header string represented as its individual values.
  * Created by sandro on 11/12/18
  */
 public class Authorization {

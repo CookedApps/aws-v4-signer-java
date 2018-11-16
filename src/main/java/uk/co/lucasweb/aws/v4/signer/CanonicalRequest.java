@@ -29,6 +29,11 @@ class CanonicalRequest {
     private static final String S3_SERVICE = "s3";
     private static final char QUERY_PARAMETER_SEPARATOR = '&';
     private static final char QUERY_PARAMETER_VALUE_SEPARATOR = '=';
+    private static final String X_AMZ_ALGORITHM = "X-Amz-Algorithm";
+    private static final String X_AMZ_CREDENTIAL = "X-Amz-Credential";
+    private static final String X_AMZ_DATE = "X-Amz-Date";
+    private static final String X_AMZ_EXPIRES = "X-Amz-Expires";
+    private static final String X_AMZ_SIGNED_HEADERS = "X-Amz-SignedHeaders";
 
     private final String service;
     private HttpRequest httpRequest;
@@ -166,24 +171,32 @@ class CanonicalRequest {
         return results;
     }
 
-    void addPreSignedUrlQueryParameters(String algorithm, String credentials, String date) {
-        addQueryParameters(algorithm, credentials, date, getHeaders().getNames());
-    }
+    void addQueryParametersForPreSignedUrl(String algorithm, String credentials, String date, int expiresInSeconds) {
+        addPreSignedUrlParamsToQueryParameters(algorithm, credentials, date, expiresInSeconds);
 
-    private void addQueryParameters(String algorithm, String credentials, String date, String signedHeaders) {
-        queryParameters.add(new Parameter("X-Amz-Algorithm", algorithm));
-        queryParameters.add(new Parameter("X-Amz-Credential", credentials));
-        queryParameters.add(new Parameter("X-Amz-Date", date));
-        queryParameters.add(new Parameter("X-Amz-SignedHeaders", signedHeaders));
-        queryParameters.sort(Comparator.comparing(parameter -> parameter.name));
-
-        StringBuffer sb = new StringBuffer();
-        sb.append('?');
-        queryParameters.forEach(p -> sb.append(p.name).append('=').append(p.value).append('&'));
-        String query = sb.toString();
-        query = query.substring(0, query.length() - 1);
+        String query = buildQueryParametersString();
 
         httpRequest = new HttpRequest(httpRequest.getMethod(), httpRequest.getPath() + query);
+    }
+
+    private void addPreSignedUrlParamsToQueryParameters(String algorithm, String credentials, String date, int expiresInSeconds) {
+        queryParameters.add(new Parameter(X_AMZ_ALGORITHM, algorithm));
+        queryParameters.add(new Parameter(X_AMZ_CREDENTIAL, credentials));
+        queryParameters.add(new Parameter(X_AMZ_DATE, date));
+        queryParameters.add(new Parameter(X_AMZ_EXPIRES, String.valueOf(expiresInSeconds)));
+        queryParameters.add(new Parameter(X_AMZ_SIGNED_HEADERS, headers.getNames()));
+        queryParameters.sort(Comparator.comparing(parameter -> parameter.name));
+    }
+
+    private String buildQueryParametersString() {
+        StringBuffer sb = new StringBuffer();
+        sb.append('?');
+        queryParameters.forEach(p -> sb.append(p.name).append(QUERY_PARAMETER_VALUE_SEPARATOR).append(p.value).append(QUERY_PARAMETER_SEPARATOR));
+        return removeLastChar(sb.toString());
+    }
+
+    private String removeLastChar(String string) {
+        return string.substring(0, string.length() - 1);
     }
 
     private static final class Parameter {
