@@ -16,6 +16,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import uk.co.lucasweb.aws.v4.signer.encoding.URLEncoding;
@@ -30,21 +31,23 @@ class CanonicalRequest {
     private static final char QUERY_PARAMETER_VALUE_SEPARATOR = '=';
 
     private final String service;
-    private final HttpRequest httpRequest;
+    private HttpRequest httpRequest;
     private final CanonicalHeaders headers;
     private final String contentSha256;
+    private List<Parameter> queryParameters;
 
     CanonicalRequest(String service, HttpRequest httpRequest, CanonicalHeaders headers, String contentSha256) {
         this.service = service;
         this.httpRequest = httpRequest;
         this.headers = headers;
         this.contentSha256 = contentSha256;
+        this.queryParameters = new ArrayList<>(extractQueryParameters(httpRequest.getQuery()));
     }
 
     String get() {
         return httpRequest.getMethod() +
                 "\n" + normalizePath(httpRequest.getPath()) +
-                "\n" + normalizeQuery(httpRequest.getQuery()) +
+                "\n" + normalizeQuery(queryParameters) +
                 "\n" + headers.get() +
                 "\n" + headers.getNames() +
                 "\n" + contentSha256;
@@ -84,23 +87,18 @@ class CanonicalRequest {
         }
     }
 
-    private static String normalizeQuery(String rawQuery) {
-        if (rawQuery == null || rawQuery.isEmpty()) {
-            return "";
-        }
-
-        List<Parameter> parameters = extractQueryParameters(rawQuery);
-
+    private String normalizeQuery(List<Parameter> queryParameters) {
+        if (queryParameters == null || queryParameters.isEmpty()) return "";
         /*
          * Sort query parameters. Simply sort lexicographically by character
          * code, which is equivalent to comparing code points (as mandated by
          * AWS)
          */
-        parameters.sort((l, r) -> l.name.compareTo(r.name));
+        queryParameters.sort(Comparator.comparing(l -> l.name));
 
         StringBuilder builder = new StringBuilder();
         boolean first = true;
-        for (Parameter parameter : parameters) {
+        for (Parameter parameter : queryParameters) {
             if (first) {
                 first = false;
             } else {
@@ -116,7 +114,6 @@ class CanonicalRequest {
                     .append(QUERY_PARAMETER_VALUE_SEPARATOR)
                     .append(URLEncoding.encodeQueryComponent(value));
         }
-
         return builder.toString();
     }
 
@@ -132,6 +129,7 @@ class CanonicalRequest {
      */
     private static List<Parameter> extractQueryParameters(String rawQuery) {
         List<Parameter> results = new ArrayList<>();
+        if(rawQuery == null || rawQuery.isEmpty()) return results;
         int endIndex = rawQuery.length() - 1;
         int index = 0;
         while (0 <= index && index <= endIndex) {
@@ -168,11 +166,31 @@ class CanonicalRequest {
         return results;
     }
 
+    void addPreSignedUrlQueryParameters(String algorithm, String credentials, String date) {
+        addQueryParameters(algorithm, credentials, date, getHeaders().getNames());
+    }
+
+    private void addQueryParameters(String algorithm, String credentials, String date, String signedHeaders) {
+        queryParameters.add(new Parameter("X-Amz-Algorithm", algorithm));
+        queryParameters.add(new Parameter("X-Amz-Credential", credentials));
+        queryParameters.add(new Parameter("X-Amz-Date", date));
+        queryParameters.add(new Parameter("X-Amz-SignedHeaders", signedHeaders));
+        queryParameters.sort(Comparator.comparing(parameter -> parameter.name));
+
+        StringBuffer sb = new StringBuffer();
+        sb.append('?');
+        queryParameters.forEach(p -> sb.append(p.name).append('=').append(p.value).append('&'));
+        String query = sb.toString();
+        query = query.substring(0, query.length() - 1);
+
+        httpRequest = new HttpRequest(httpRequest.getMethod(), httpRequest.getPath() + query);
+    }
+
     private static final class Parameter {
         private final String name;
         private final String value;
 
-        public Parameter(String name, String value) {
+        Parameter(String name, String value) {
             super();
             this.name = name;
             this.value = value;

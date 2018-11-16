@@ -12,6 +12,7 @@
  */
 package uk.co.lucasweb.aws.v4.signer;
 
+import org.junit.Ignore;
 import org.junit.Test;
 import uk.co.lucasweb.aws.v4.signer.credentials.AwsCredentials;
 
@@ -96,5 +97,23 @@ public class SignerTest {
                 "Signature=3ee337a197d3b15e719fd21acf378ef2d62f73159ff3c47fc0204e27e5ee9fb1";
 
         assertThat(signature).isEqualTo(expectedSignature);
+    }
+
+    @Ignore
+    @Test
+    public void shouldSignPreSignedRequestUrl() throws Exception {
+        String imageFileName = "test.txt";
+
+        URI uri = new URI("https://examplebucket.s3.amazonaws.com/" + imageFileName + "?X-Amz-Expires=86400");
+        HttpRequest request = new HttpRequest("GET", uri);
+        String xAmzDate = "20130524T000000Z";
+        Authorization a = Signer.builder()
+                .awsCredentials(new AwsCredentials("AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"))
+                .header("Host", "examplebucket.s3.amazonaws.com")
+                .region("us-east-1")
+                .buildS3PreSignedUrl(request, xAmzDate)
+                .getSignatureValues();
+
+        assertThat(a.getSignature()).isEqualTo("aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404");
     }
 }

@@ -21,10 +21,7 @@ import uk.co.lucasweb.aws.v4.signer.hash.Sha256;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * @author Richard Lucas
@@ -86,7 +83,7 @@ public class Signer {
         return ALGORITHM + " " + "Credential=" + credential + ", " + "SignedHeaders=" + signedHeaders + ", " + "Signature=" + signature;
     }
 
-    private static String getCredential(String accessKey, String credentialScope) {
+    static String getCredential(String accessKey, String credentialScope) {
         return accessKey + "/" + credentialScope;
     }
 
@@ -142,8 +139,7 @@ public class Signer {
         }
 
         public Builder headers(Header... headers) {
-            Arrays.stream(headers)
-                    .forEach(headersList::add);
+            headersList.addAll(Arrays.asList(headers));
             return this;
         }
 
@@ -151,10 +147,6 @@ public class Signer {
             CanonicalHeaders canonicalHeaders = getCanonicalHeaders();
             String date = canonicalHeaders.getFirstValue(X_AMZ_DATE)
                     .orElseThrow(() -> new SigningException("headers missing '" + X_AMZ_DATE + "' header"));
-            return build(request, service, canonicalHeaders, date, contentSha256);
-        }
-
-        private Signer build(HttpRequest request, String service, CanonicalHeaders canonicalHeaders, String date, String contentSha256) {
             String dateWithoutTimestamp = formatDateWithoutTimestamp(date);
             AwsCredentials awsCredentials = getAwsCredentials();
             CanonicalRequest canonicalRequest = new CanonicalRequest(service, request, canonicalHeaders, contentSha256);
@@ -166,8 +158,16 @@ public class Signer {
             return build(request, S3, contentSha256);
         }
 
-        public Signer buildS3PresignedUrl(HttpRequest request, String date) {
-            return build(request, S3, getCanonicalHeaders(), date, UNSIGNED_PAYLOAD);
+        public Signer buildS3PreSignedUrl(HttpRequest request, String date) {
+            String service = S3;
+            String dateWithoutTimestamp = formatDateWithoutTimestamp(date);
+            AwsCredentials awsCredentials = getAwsCredentials();
+            CredentialScope scope = new CredentialScope(dateWithoutTimestamp, service, region);
+
+            CanonicalRequest canonicalRequest = new CanonicalRequest(service, request, getCanonicalHeaders(), UNSIGNED_PAYLOAD);
+            canonicalRequest.addPreSignedUrlQueryParameters(ALGORITHM, getCredential(awsCredentials.getAccessKey(), scope.get()), date);
+
+            return new Signer(canonicalRequest, awsCredentials, date, scope);
         }
 
         public Signer buildGlacier(HttpRequest request, String contentSha256) {
